@@ -353,5 +353,3 @@ export const heyNinaiva = onMessagePublished("heyNinaiva", async (event) => {
     return null
 })
 
-/* https://androidpublisher.googleapis.com/androidpublisher/v3/applications/app.dfeverx.ninaiva/purchases/subscriptions/ninaiva_test_subscription/tokens/ccjccakabdgmfdpipcpinhgo.AO-J1OxyypBpLmK8CnJp12tU59_k1BR4anEMUqZ17kK60t8AnQGSqPUUBe8MY1YDVcyuED8GnXcSF7QkybxR50Tn9WZogDGAow
- */
