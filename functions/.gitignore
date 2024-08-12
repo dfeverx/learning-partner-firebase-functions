@@ -9,3 +9,5 @@ typings/
 node_modules/
 *.local
 .env
+#  GoogleAuth  Keyfile
+src/pc-api.json

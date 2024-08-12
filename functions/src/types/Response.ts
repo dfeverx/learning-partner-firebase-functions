@@ -4,7 +4,9 @@ export interface FunResponse {
     credit?: {
         monthlyNoteCount: number,
         noteCount: number,
-        subscriptionLevel: string,
+        // subscriptionLevel: string,
+    }, subscription?: {
+        start: number, end: number, id: string
     }
     statusCode: number;
 

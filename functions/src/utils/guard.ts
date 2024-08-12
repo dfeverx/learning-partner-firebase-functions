@@ -8,18 +8,17 @@ export const getStartOfMonth = () => {
 };
 
 
+
+
 export const checkNoteCreationLimit = async (
+    isAnonymous: boolean,
     noteCount: number,
-    subscriptionLevel: string,
-    monthlyNoteCount: number):
+    monthlyNoteCount: number,
+    end: number
+):
     Promise<FunResponse> => {
 
-    /* {
-    noteCount:0,
-    subscriptionLevel:"free|anonynous|premium",
-    lastUpdated:unix,
-    monthlyNoteCount:0
-    } */
+    const isPremium = end < Date.now()
 
 
     // Define note limits
@@ -31,22 +30,22 @@ export const checkNoteCreationLimit = async (
 
     // Determine user note limit
     let noteLimit = noteLimits.free;
-    if (subscriptionLevel === 'anonymous') {
+    if (isAnonymous) {
         noteLimit = noteLimits.anonymous;
-    } else if (subscriptionLevel === 'premium') {
+    } else if (isPremium) {
         noteLimit = noteLimits.premium;
     }
-    console.log("subscriptionLevel", subscriptionLevel);
+    console.log("subscriptionLevel", isAnonymous, isPremium);
     console.log("note Limit", noteLimit);
 
 
     // Use monthly limit for free users
-    if (subscriptionLevel === 'free' && monthlyNoteCount >= noteLimit) {
+    if (isPremium && monthlyNoteCount >= noteLimit) {
         return {
             error: "Monthly note creation limit reached.",
             statusCode: 500
         }
-    } else if (subscriptionLevel === 'premium' && monthlyNoteCount >= noteLimit) {
+    } else if ((!isAnonymous) && monthlyNoteCount >= noteLimit) {
         return {
             error: "Monthly note creation limit reached.",
             statusCode: 500

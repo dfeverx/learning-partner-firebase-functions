@@ -8,6 +8,8 @@ import { genImg } from "./utils/sdxl";
 import { checkNoteCreationLimit, getStartOfMonth } from "./utils/guard";
 import { FunResponse } from "./types/Response";
 import { onMessagePublished } from "firebase-functions/v2/pubsub";
+import { categoriesNotificationGetPayloadForFirestore, validatePurchase } from "./utils/subscription";
+
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -33,13 +35,15 @@ async function updateFirestoreStatus(userId: string,
     updateData: object,
     monthlyNoteCount: number = 0): Promise<void> {
     const noteDocRef = db.doc(`users/${userId}/notes/${noteId}`);
-    const creditDocRef = db.doc(`users/${userId}/credit/v1`);
+    const creditDocRef = db.doc(`users/${userId}/credit/v2`);
 
     const notePromise = noteDocRef.set({ ...updateData, docUrl: docUrl }, { merge: true });
     const creditPromise = creditDocRef.set({
-        noteCount: admin.firestore.FieldValue.increment(1),
-        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-        monthlyNoteCount: monthlyNoteCount == 0 ? 1 : admin.firestore.FieldValue.increment(1)
+        credit: {
+            noteCount: admin.firestore.FieldValue.increment(1),
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            monthlyNoteCount: monthlyNoteCount == 0 ? 1 : admin.firestore.FieldValue.increment(1)
+        }
     }, { merge: true })
 
     await Promise.all([notePromise, creditPromise])
@@ -131,27 +135,32 @@ export const processNote = onCall({
         }
     }
 
-    const creditInfo = await db.doc(`users/${userId}/credit/v1`)
+    const creditInfo = await db.doc(`users/${userId}/credit/v2`)
         .get();
 
     const userData = creditInfo.data();
-    const defaultSubscriptionLevel = token.firebase.sign_in_provider === 'anonymous' ? "anonymous" : "free"
+    const isAnonymous = token.firebase.sign_in_provider === 'anonymous'
 
     console.log("user info", userData);
 
-    const noteCount = userData?.noteCount || 0;
-    const subscriptionLevel = userData?.subscriptionLevel || defaultSubscriptionLevel;//anonymous,free,premium
-    let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
-    const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
+    // const noteCount = userData?.noteCount || 0;
+    // const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
+
+    // let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
+    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = userData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
+    const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
 
     // Reset monthly note count if the month has changed
     const startOfMonth = getStartOfMonth();
-    if (lastUpdated < startOfMonth) {
-        monthlyNoteCount = 0;
+    if ((userData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
+        ? userData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
+        : new Date(0) // Default to Unix epoch if lastUpdated is not present
+    ) < startOfMonth) {
+        credit.monthlyNoteCount = 0;
     }
 
-    const limitRes = await checkNoteCreationLimit(
-        noteCount, subscriptionLevel, monthlyNoteCount
+    const limitRes = await checkNoteCreationLimit(isAnonymous,
+        credit.noteCount, credit.monthlyNoteCount, subscription.end
     )
 
     console.log(limitRes);
@@ -160,19 +169,22 @@ export const processNote = onCall({
         console.log("Request not valid for note creation");
         return {
             ...limitRes, credit: {
-                monthlyNoteCount: monthlyNoteCount,
-                noteCount: noteCount,
-                subscriptionLevel: subscriptionLevel
-            }
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+
+            },
+            subscription: subscription
         }
     }
-    const result = await processNoteCreation(userId, noteId, docUrl, monthlyNoteCount)
+    const result = await processNoteCreation(userId, noteId, docUrl, credit.monthlyNoteCount)
     return {
-        statusCode: 200, data: result, credit: {
-            monthlyNoteCount: monthlyNoteCount + 1,
-            noteCount: noteCount + 1,
-            subscriptionLevel: subscriptionLevel
-        }
+        statusCode: 200,
+        data: result,
+        credit: {
+            monthlyNoteCount: credit.monthlyNoteCount + 1,
+            noteCount: credit.noteCount + 1,
+
+        }, subscription: subscription
     }
 })
 
@@ -198,23 +210,29 @@ export const retryFromFailed = onCall({
 
 
 
-    const creditInfo = await db.doc(`users/${userId}/credit/v1`)
+    const creditInfo = await db.doc(`users/${userId}/credit/v2`)
         .get();
 
     const userData = creditInfo.data();
-    const defaultSubscriptionLevel = token.firebase.sign_in_provider === 'anonymous' ? "anonymous" : "free"
+    const isAnonymous = token.firebase.sign_in_provider === 'anonymous'
 
     console.log("user info", userData);
 
-    const noteCount = userData?.noteCount || 0;
-    const subscriptionLevel = userData?.subscriptionLevel || defaultSubscriptionLevel;//anonymous,free,premium
-    let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
-    const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
+    // const noteCount = userData?.noteCount || 0;
+    // let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
+    // const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
+    // const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
+
+    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = userData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
+    const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
 
     // Reset monthly note count if the month has changed
     const startOfMonth = getStartOfMonth();
-    if (lastUpdated < startOfMonth) {
-        monthlyNoteCount = 0;
+    if ((userData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
+        ? userData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
+        : new Date(0) // Default to Unix epoch if lastUpdated is not present
+    ) < startOfMonth) {
+        credit.monthlyNoteCount = 0;
     }
 
     // -1= suspended document,4= finished docuemnt
@@ -223,15 +241,15 @@ export const retryFromFailed = onCall({
             statusCode: 200,
             data: noteData,
             credit: {
-                monthlyNoteCount: monthlyNoteCount,
-                noteCount: noteCount,
-                subscriptionLevel: subscriptionLevel
-            }
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+
+            }, subscription: subscription
         }
     }
 
     const limitRes = await checkNoteCreationLimit(
-        noteCount, subscriptionLevel, monthlyNoteCount
+        isAnonymous, credit.noteCount, credit.monthlyNoteCount, subscription.end
     )
 
     console.log(limitRes);
@@ -239,11 +257,12 @@ export const retryFromFailed = onCall({
     if (limitRes.statusCode != 200) {
         console.log("note creation limit exceed");
         return {
-            ...limitRes, credit: {
-                monthlyNoteCount: monthlyNoteCount,
-                noteCount: noteCount,
-                subscriptionLevel: subscriptionLevel
-            }
+            ...limitRes,
+            credit: {
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+            },
+            subscription: subscription
         }
     }
 
@@ -253,10 +272,11 @@ export const retryFromFailed = onCall({
             statusCode: 400,
             error: "document not uploaded yet",
             credit: {
-                monthlyNoteCount: monthlyNoteCount,
-                noteCount: noteCount,
-                subscriptionLevel: subscriptionLevel
-            }
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+
+            },
+            subscription: subscription
         }
     }
 
@@ -314,23 +334,25 @@ export const retryFromFailed = onCall({
                 updateData = { ...updateData, thumbnail: thumbnailPath, status: status, };
             }
 
-            await updateFirestoreStatus(userId, noteId, docUrl, updateData, monthlyNoteCount);
+            await updateFirestoreStatus(userId, noteId, docUrl, updateData, credit.monthlyNoteCount);
             return {
                 statusCode: 200, data: { ...updateData, docUrl: docUrl }, credit: {
-                    monthlyNoteCount: monthlyNoteCount + 1,
-                    noteCount: noteCount + 1,
-                    subscriptionLevel: subscriptionLevel
-                }
+                    monthlyNoteCount: credit.monthlyNoteCount + 1,
+                    noteCount: credit.noteCount + 1,
+
+                }, subscription: subscription
             }
         } catch (error) {
             logger.error('Error in final retry steps', error);
-            await updateFirestoreStatus(userId, noteId, docUrl, updateData, monthlyNoteCount);
+            await updateFirestoreStatus(userId, noteId, docUrl, updateData, credit.monthlyNoteCount);
             return {
-                statusCode: 200, data: { ...updateData, docUrl: docUrl }, credit: {
-                    monthlyNoteCount: monthlyNoteCount + 1,
-                    noteCount: noteCount + 1,
-                    subscriptionLevel: subscriptionLevel
-                }
+                statusCode: 200, data: { ...updateData, docUrl: docUrl },
+                credit: {
+                    monthlyNoteCount: credit.monthlyNoteCount + 1,
+                    noteCount: credit.noteCount + 1,
+
+                },
+                subscription: subscription
             }
         }
     }
@@ -349,7 +371,38 @@ export const retryFromFailed = onCall({
 export const heyNinaiva = onMessagePublished("heyNinaiva", async (event) => {
     const data = event.data;
     console.log("heyNinaiva", JSON.stringify(data));
+    const purchaseData = JSON.parse(Buffer.from(data.message.data, 'base64').toString('utf8'))
+    // skip if it is not subscription realted notification
+    if (!purchaseData.subscriptionNotification) {
+        console.log("Not Sub Notifi Skipping .... ");
 
+        return null
+    }
+    const subscriptionDetails = await validatePurchase(
+        purchaseData.packageName,
+        purchaseData.subscriptionNotification.subscriptionId,
+        purchaseData.subscriptionNotification.purchaseToken)
+        .then(result => result)
+        .catch(e => {
+            console.log("error", e);
+        })
+
+    console.log("SubscriptionDetails", subscriptionDetails);
+
+    if (!subscriptionDetails) {
+        return null
+    }
+    const firestoreSubInfo = categoriesNotificationGetPayloadForFirestore(purchaseData, subscriptionDetails)
+    console.log("firestoreSubInfo", firestoreSubInfo);
+
+    if (!firestoreSubInfo?.subscription) {
+        return null
+    }
+
+    const creditDocRef = db.doc(`users/${firestoreSubInfo.uid}/credit/v2`);
+
+    await creditDocRef.set({ subscription: { ...firestoreSubInfo.subscription } }, { merge: true })
     return null
+
 })
 
