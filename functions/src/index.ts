@@ -135,25 +135,25 @@ export const processNote = onCall({
         }
     }
 
-    const creditInfo = await db.doc(`users/${userId}/credit/v2`)
+    const creditDoc = await db.doc(`users/${userId}/credit/v2`)
         .get();
 
-    const userData = creditInfo.data();
+    const creditData = creditDoc.data();
     const isAnonymous = token.firebase.sign_in_provider === 'anonymous'
 
-    console.log("user info", userData);
+    console.log("credit info", creditData);
 
     // const noteCount = userData?.noteCount || 0;
     // const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
 
     // let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
-    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = userData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
-    const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
+    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = creditData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
+    const subscription: { start: number, end: number, id: string } = creditData?.subscription || { start: 0, end: 0 }
 
     // Reset monthly note count if the month has changed
     const startOfMonth = getStartOfMonth();
-    if ((userData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
-        ? userData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
+    if ((creditData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
+        ? creditData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
         : new Date(0) // Default to Unix epoch if lastUpdated is not present
     ) < startOfMonth) {
         credit.monthlyNoteCount = 0;
@@ -166,7 +166,11 @@ export const processNote = onCall({
     console.log(limitRes);
 
     if (limitRes.statusCode != 200) {
+
         console.log("Request not valid for note creation");
+        // create firestore doc 
+        const noteDocRef = db.doc(`users/${userId}/notes/${noteId}`);
+        await noteDocRef.set({ status: 0, docUrl: docUrl }, { merge: true });
         return {
             ...limitRes, credit: {
                 monthlyNoteCount: credit.monthlyNoteCount,
@@ -206,34 +210,45 @@ export const retryFromFailed = onCall({
         }
     }
     const noteDoc = await db.doc(`users/${userId}/notes/${noteId}`).get();
-    const noteData = noteDoc.data() as ProcessedDocRes;
-
-
-
-    const creditInfo = await db.doc(`users/${userId}/credit/v2`)
+    const creditDoc = await db.doc(`users/${userId}/credit/v2`)
         .get();
 
-    const userData = creditInfo.data();
+    const creditData = creditDoc.data();
     const isAnonymous = token.firebase.sign_in_provider === 'anonymous'
 
-    console.log("user info", userData);
+
+    console.log("credit info", creditData);
 
     // const noteCount = userData?.noteCount || 0;
     // let monthlyNoteCount: number = userData?.monthlyNoteCount || 0;
     // const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
     // const lastUpdated = userData?.lastUpdated ? userData.lastUpdated.toDate() : new Date(0);
 
-    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = userData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
-    const subscription: { start: number, end: number, id: string } = userData?.subscription || { start: 0, end: 0 }
+    const credit: { noteCount: number, monthlyNoteCount: number, lastUpdated: any } = creditData?.credit || { noteCount: 0, monthlyNoteCount: 0, lastUpdated: new Date(0) }
+    const subscription: { start: number, end: number, id: string } = creditData?.subscription || { start: 0, end: 0 }
 
     // Reset monthly note count if the month has changed
     const startOfMonth = getStartOfMonth();
-    if ((userData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
-        ? userData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
+    if ((creditData?.credit?.lastUpdated instanceof admin.firestore.Timestamp
+        ? creditData.credit.lastUpdated.toDate() // Convert Firestore Timestamp to JavaScript Date
         : new Date(0) // Default to Unix epoch if lastUpdated is not present
     ) < startOfMonth) {
         credit.monthlyNoteCount = 0;
     }
+
+    if (!noteDoc.exists) {
+        return {
+            statusCode: 400,
+            error: "document not uploaded yet",
+            credit: {
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+
+            },
+            subscription: subscription
+        }
+    }
+    const noteData = noteDoc.data() as ProcessedDocRes;
 
     // -1= suspended document,4= finished docuemnt
     if (noteData.status == -1 || noteData.status == 4) {
@@ -244,7 +259,8 @@ export const retryFromFailed = onCall({
                 monthlyNoteCount: credit.monthlyNoteCount,
                 noteCount: credit.noteCount,
 
-            }, subscription: subscription
+            },
+            subscription: subscription
         }
     }
 
@@ -267,18 +283,7 @@ export const retryFromFailed = onCall({
     }
 
 
-    if (!noteDoc.exists) {
-        return {
-            statusCode: 400,
-            error: "document not uploaded yet",
-            credit: {
-                monthlyNoteCount: credit.monthlyNoteCount,
-                noteCount: credit.noteCount,
 
-            },
-            subscription: subscription
-        }
-    }
 
 
     console.log("noteData", noteData);

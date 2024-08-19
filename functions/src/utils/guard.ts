@@ -18,7 +18,11 @@ export const checkNoteCreationLimit = async (
 ):
     Promise<FunResponse> => {
 
-    const isPremium = end < Date.now()
+    const isPremium = end > Date.now()
+    console.log("end", end);
+    console.log("notecount", noteCount);
+    console.log("monthlyNoteCount", monthlyNoteCount);
+    console.log("end", Date.now());
 
 
     // Define note limits
