@@ -37,7 +37,7 @@ async function updateFirestoreStatus(userId: string,
     const noteDocRef = db.doc(`users/${userId}/notes/${noteId}`);
     const creditDocRef = db.doc(`users/${userId}/credit/v2`);
 
-    const notePromise = noteDocRef.set({ ...updateData, docUrl: docUrl }, { merge: true });
+    const notePromise = noteDocRef.set({ ...updateData, docUrl: docUrl, try: admin.firestore.FieldValue.increment(1) }, { merge: true });
     const creditPromise = creditDocRef.set({
         credit: {
             noteCount: admin.firestore.FieldValue.increment(1),
@@ -196,7 +196,7 @@ export const retryFromFailed = onCall({
     // enforceAppCheck: true, // Reject requests with missing or invalid App Check tokens.
     // consumeAppCheckToken: true  // Consume the token after verification.
 }, async (req): Promise<FunResponse> => {
-    const { noteId } = req.data;
+    const { noteId, docUrl } = req.data;
     const userId = req.auth?.uid
     const token = req.auth?.token
 
@@ -236,33 +236,6 @@ export const retryFromFailed = onCall({
         credit.monthlyNoteCount = 0;
     }
 
-    if (!noteDoc.exists) {
-        return {
-            statusCode: 400,
-            error: "document not uploaded yet",
-            credit: {
-                monthlyNoteCount: credit.monthlyNoteCount,
-                noteCount: credit.noteCount,
-
-            },
-            subscription: subscription
-        }
-    }
-    const noteData = noteDoc.data() as ProcessedDocRes;
-
-    // -1= suspended document,4= finished docuemnt
-    if (noteData.status == -1 || noteData.status == 4) {
-        return {
-            statusCode: 200,
-            data: noteData,
-            credit: {
-                monthlyNoteCount: credit.monthlyNoteCount,
-                noteCount: credit.noteCount,
-
-            },
-            subscription: subscription
-        }
-    }
 
     const limitRes = await checkNoteCreationLimit(
         isAnonymous, credit.noteCount, credit.monthlyNoteCount, subscription.end
@@ -285,10 +258,39 @@ export const retryFromFailed = onCall({
 
 
 
+    let noteData = noteDoc.data() as ProcessedDocRes;
+    if (!noteDoc.exists) {
+        /*  return {
+             statusCode: 400,
+             error: "document not uploaded yet",
+             credit: {
+                 monthlyNoteCount: credit.monthlyNoteCount,
+                 noteCount: credit.noteCount,
+ 
+             },
+             subscription: subscription
+         } */
+        // @ts-ignore
+        noteData = { status: 1, docUrl: docUrl }
+    }
+    // -1= suspended document,4= finished docuemnt
+    if (noteData.status == -1 || noteData.status == 4) {
+        return {
+            statusCode: 200,
+            data: noteData,
+            credit: {
+                monthlyNoteCount: credit.monthlyNoteCount,
+                noteCount: credit.noteCount,
+
+            },
+            subscription: subscription
+        }
+    }
+
 
     console.log("noteData", noteData);
 
-    const docUrl = noteData.docUrl
+    // const docURL = noteData.docUrl
     // let finalRes: ProcessedDocRes = {} as ProcessedDocRes;
     let createImg: Buffer | null = null;
     const thumbnailPath = `${userId}/uploads/${noteId}/thumb.webp`;
@@ -324,7 +326,9 @@ export const retryFromFailed = onCall({
 
         }
 
-        createImg = await genImg(noteData.thumbnailPrompt);
+        // createImg = await genImg(noteData.thumbnailPrompt);
+        // @ts-ignore
+        createImg = await genImg(updateData.thumbnailPrompt);
 
     } catch (error) {
         logger.error('Error in retry process', error);
