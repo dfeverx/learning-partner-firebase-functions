@@ -122,7 +122,7 @@ export const activitiesFormNoteFlow = defineFlow(
 
     // @ts-ignore
     async (input) => {
-        const consPrompt = " Make  questions and flashCards  based on the provided content .Return response in this " + JSON.stringify(activitiesSampleJson) + "JSON schema structure . Ensure that each flashcard and question covers the entire content comprehensively for effective learning. The generated flashcard and question must include the specified areas id identified by " + input.areaWithId + ", areaId must be number given.Flash card prompt must be short.Min questions:10 ,Max questions:20,Question must cover the whole area ------------------- " + input.markdown
+        const consPrompt = " Make  questions with four options and flashCards  based on the provided content .Return response in this " + JSON.stringify(activitiesSampleJson) + "JSON schema structure . Ensure that each flashcard and question covers the entire content comprehensively for effective learning. The generated flashcard and question must include the specified areas id identified by " + input.areaWithId + ", areaId must be number given.Flash card prompt must be short.Min questions:10 ,Max questions:20,Question must cover the whole area ------------------- " + input.markdown
         const llmResponse = await generate({
 
             model: gemini15FlashPreview,
