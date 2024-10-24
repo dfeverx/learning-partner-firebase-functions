@@ -1,6 +1,6 @@
 
 import { logger } from "firebase-functions/v2";
-import { onCall } from "firebase-functions/v2/https";
+import { onCall, onRequest } from "firebase-functions/v2/https";
 import { runFlow } from "@genkit-ai/flow";
 import admin from 'firebase-admin';
 import { activitiesFormNoteFlow, processDocuemntFlow } from "./utils/genAI";
@@ -9,6 +9,7 @@ import { checkNoteCreationLimit, getStartOfMonth } from "./utils/guard";
 import { FunResponse } from "./types/Response";
 import { onMessagePublished } from "firebase-functions/v2/pubsub";
 import { categoriesNotificationGetPayloadForFirestore, validatePurchase } from "./utils/subscription";
+import { notePreviewRender } from "./web";
 
 
 admin.initializeApp();
@@ -367,6 +368,157 @@ export const retryFromFailed = onCall({
     }
 });
 
+function selectFields<T extends object, K extends keyof T>(obj: T, fieldsToSelect: K[]): Pick<T, K> {
+    const result = {} as Pick<T, K>;
+
+    for (const field of fieldsToSelect) {
+        if (field in obj) {
+            result[field] = obj[field];  // Copy only selected fields
+        }
+    }
+
+    return result;
+}
+
+export const genSharableLink = onCall({
+    // enforceAppCheck: true, // Reject requests with missing or invalid App Check tokens.
+    // consumeAppCheckToken: true  // Consume the token after verification.
+}, async (req): Promise<FunResponse> => {
+    const { noteId } = req.data;
+    const userId = req.auth?.uid
+    const token = req.auth?.token
+
+
+    if (userId == undefined ||
+        noteId == undefined ||
+        token == undefined) {
+        return {
+            statusCode: 401,
+            error: "Bad request.",
+        }
+    }
+    try {
+        const refPath = `public/${userId}/notes/${noteId}`
+        const sharableLink = `user/${userId}/note/${noteId}`
+        const rdb = admin.database()
+        const noteRDBRef = rdb.ref(refPath)
+        const sharableNote = await noteRDBRef.get()
+        if (sharableNote.exists()) {
+            // poll share count to db
+            console.log("exists");
+
+            return { data: { link: sharableLink }, statusCode: 200 }
+        }
+
+        const noteDoc = await db.doc(`users/${userId}/notes/${noteId}`).get();
+        // noteDoc exist check error
+        let noteData = noteDoc.data() as ProcessedDocRes;
+
+        var note = selectFields(noteData, [
+            'title',
+            'docUrl',
+            'thumbnailPrompt',
+            'thumbnail',
+            'markdown',
+            'subject',
+            'summary',
+            'keyAreas',
+            'flashCards',
+            'questions',
+            'author',
+            'createdAt',
+            'status'
+        ])
+        console.log("created");
+        note.author = userId
+        // @ts-ignore
+        note.sharableLink = sharableLink
+        console.log("selected note", note);
+        await noteRDBRef.set(note)
+        return { data: { link: sharableLink }, statusCode: 200 }
+    } catch (e) {
+        return { error: "failed to create sharable link", statusCode: 400 }
+
+    }
+
+})
+
+
+export const getSharedNote = onCall({
+    // enforceAppCheck: true, // Reject requests with missing or invalid App Check tokens.
+    // consumeAppCheckToken: true  // Consume the token after verification.
+}, async (req): Promise<FunResponse> => {
+    const { authorId, noteId } = req.data;
+    console.log("author", authorId);
+    console.log("noteId", noteId);
+
+    const userId = req.auth?.uid
+    const token = req.auth?.token
+
+
+    if (userId == undefined ||
+        noteId == undefined ||
+        token == undefined) {
+        return {
+            statusCode: 401,
+            error: "Bad request.",
+        }
+    }
+
+
+    try {
+        const sharableLink = `public/${authorId}/notes/${noteId}`
+        const rdb = admin.database()
+        const noteRDBRef = rdb.ref(sharableLink)
+        const sharableNote = await noteRDBRef.get()
+        if (sharableNote.exists()) {
+            var noteInfo = sharableNote.val()
+            // save to firestore
+            const noteDocRef = db.doc(`users/${userId}/notes/${noteId}`);
+            noteInfo.createdAt = Date.now()
+            await noteDocRef.set(noteInfo)
+            // poll share count to db
+            return { data: sharableNote.val(), statusCode: 200 }
+        }
+        console.log("note not exists");
+
+        return { error: "invalid link", statusCode: 404 }
+    } catch (e) {
+        console.log("Error", e);
+        return { error: "failed to get shared note", statusCode: 400 }
+
+    }
+
+})
+
+
+export const noteWebPreview = onRequest(async (req, res) => {
+    const pathParts = req.path.split('/');
+    const userId = pathParts[2]; // Assuming the URL is structured as "/user/{userId}/note/{noteId}"
+    const noteId = pathParts[4];
+
+
+    if (!userId || !noteId) {
+        res.status(400).send('User ID and Note ID are required.');
+        return
+    }
+
+    const sharableLink = `public/${userId}/notes/${noteId}`
+    const rdb = admin.database()
+    const noteRDBRef = rdb.ref(sharableLink)
+    const sharableNote = await noteRDBRef.get()
+
+    const encodedFilePath = encodeURIComponent(sharableNote.val().thumbnail);
+
+    // Construct the public URL
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/learning-partner.appspot.com/o/${encodedFilePath}?alt=media`;
+
+
+
+    const htmlContent = notePreviewRender({ ...sharableNote.val(), thumbnail: publicUrl })
+    res.set("Content-Type", "text/html");
+    res.status(200).send(htmlContent);
+})
 
 
 

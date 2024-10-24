@@ -15,6 +15,26 @@
       ]
     }
   ],
+  "hosting": {
+    "public": "public",
+    "rewrites": [
+      {
+        "source": "/user/**/note/**",
+        "function": "noteWebPreview"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/user/**/note/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=300, s-maxage=2592000"
+          }
+        ]
+      }
+    ]
+  },
   "emulators": {
     "auth": {
       "port": 9099

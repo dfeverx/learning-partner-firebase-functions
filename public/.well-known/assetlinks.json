@@ -1,0 +1,15 @@
+[
+    {
+        "relation": [
+            "delegate_permission/common.handle_all_urls"
+        ],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "app.dfeverx.ninaiva",
+            "sha256_cert_fingerprints": [
+                "88:2B:6F:17:1D:C5:7C:9F:D8:86:63:A4:69:A2:6E:DC:10:90:19:08:F0:B2:08:31:B6:DF:63:95:C3:D2:A8:50",
+                "CA:AE:F1:35:CE:84:CA:7D:5D:65:76:7C:85:41:10:99:B2:08:8C:7F:E6:10:5A:FE:05:4A:61:1F:C7:96:2C:7D"
+            ]
+        }
+    }
+]

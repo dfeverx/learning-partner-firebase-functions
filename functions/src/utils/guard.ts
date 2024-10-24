@@ -54,7 +54,7 @@ export const checkNoteCreationLimit = async (
             error: "Monthly note creation limit reached.",
             statusCode: 500
         }
-    } else if (noteCount >= noteLimit) {
+    } else if (isAnonymous && noteCount >= noteLimit) {
         return {
             error: "Monthly note creation limit reached.",
             statusCode: 500
